@@ -270,10 +270,6 @@ local preserve_keys = {
 	["children"] = true,
 }
 
-local tRace2Faction = {
-	
-}
-
 local realmKey = GameLib.GetRealmName()
 local charKey = GameLib.GetAccountRealmCharacter().strCharacter .. " - " .. realmKey
 local localeKey = GetLocale():lower()
@@ -285,7 +281,7 @@ local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
 
 	-- map "true" to our "Default" profile
 	if defaultProfile == true then defaultProfile = "Default" end
-	
+
 	local profileKey
 	if not parent then
 		-- Make a container for profile keys
@@ -399,11 +395,15 @@ local function OnSave(self, eLevel)
 end
 
 local function OnRestore(self, eLevel, tSavedData)
-	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
+	local db = GeminiDB.db_registry[self]
+	local tCancelDefaultProcessing = { bCancelDefault = false }
+	db.callbacks:Fire("OnDatabaseImport", db, eLevel, tSavedData, tCancelDefaultProcessing)
+
+	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account or
+			tCancelDefaultProcessing.bCancelDefault then
 		return
 	end
 
-	local db = GeminiDB.db_registry[self]
 	copyTable(tSavedData, db.sv)
 	db.callbacks:Fire("OnDatabaseStartup", db)
 end
