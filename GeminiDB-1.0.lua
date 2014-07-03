@@ -349,6 +349,7 @@ local function initdb(sv, defaults, defaultProfile, olddb, parent)
 	db.keys = keyTbl
 	db.sv = sv
 	db.defaults = defaults
+	db.defaultProfile = defaultProfile
 	db.parent = parent
 
 	return db
@@ -411,6 +412,17 @@ local function OnRestore(self, eLevel, tSavedData)
 	end
 
 	copyTable(tSavedData, db.sv)
+
+	local sv = rawget(db, "sv")
+	-- Try to get the profile selected from the char db
+	local profileKey = sv.profileKeys[charKey] or db.defaultProfile or charKey
+	-- save the selected profile for later
+	sv.profileKeys[charKey] = profileKey
+
+	-- Set profile to the correct profile
+	local keyTbl = rawget(db, "keys")
+	keyTbl.profile = profileKey
+
 	db.callbacks:Fire("OnDatabaseStartup", db)
 end
 
