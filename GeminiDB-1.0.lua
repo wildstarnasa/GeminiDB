@@ -32,7 +32,7 @@
 -- end
 -- @class file
 -- @name GeminiDB-1.0.lua
-local MAJOR, MINOR = "Gemini:DB-1.0", 1
+local MAJOR, MINOR = "Gemini:DB-1.0", 2
 local APkg = Apollo.GetPackage(MAJOR)
 if APkg and (APkg.nVersion or 0) >= MINOR then
 	return -- no upgrade is needed
@@ -366,16 +366,7 @@ local function createdb(oAddon, defaults, defaultProfile)
 	return db
 end
 
--- strip all defaults from the database
--- and cleans up empty sections
-local function OnSave(self, eLevel)
-	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
-		return nil
-	end
-
-	local db = GeminiDB.db_registry[self]
-	if not db then return nil end
-
+local function shutdowndb(db)
 	db.callbacks:Fire("OnDatabaseShutdown", db)
 	db:RegisterDefaults(nil)
 
@@ -397,6 +388,24 @@ local function OnSave(self, eLevel)
 			end
 		end
 	end
+end
+
+-- strip all defaults from the database
+-- and cleans up empty sections
+local function OnSave(self, eLevel)
+	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
+		return nil
+	end
+
+	local db = GeminiDB.db_registry[self]
+	if not db then return nil end
+
+	shutdowndb(db)
+
+	for namespace, namespaceDB in pairs(db.children) do
+		shutdowndb(namespaceDB)
+	end
+
 	-- Return the data to save out
 	return sv
 end
