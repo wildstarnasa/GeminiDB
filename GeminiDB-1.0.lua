@@ -32,7 +32,7 @@
 -- end
 -- @class file
 -- @name GeminiDB-1.0.lua
-local MAJOR, MINOR = "Gemini:DB-1.0", 1
+local MAJOR, MINOR = "Gemini:DB-1.0", 2
 local APkg = Apollo.GetPackage(MAJOR)
 if APkg and (APkg.nVersion or 0) >= MINOR then
 	return -- no upgrade is needed
@@ -275,8 +275,7 @@ local charKey = GameLib.GetAccountRealmCharacter().strCharacter .. " - " .. real
 local localeKey = GetLocale():lower()
 
 -- Actual database initialization function
-local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
-	local tNewDB = {}
+local function initdb(sv, defaults, defaultProfile, olddb, parent)
 	-- Generate the database keys for each section
 
 	-- map "true" to our "Default" profile
@@ -285,19 +284,19 @@ local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
 	local profileKey
 	if not parent then
 		-- Make a container for profile keys
-		if not tNewDB.profileKeys then tNewDB.profileKeys = {} end
+		if not sv.profileKeys then sv.profileKeys = {} end
 
 		-- Try to get the profile selected from the char db
-		profileKey = tNewDB.profileKeys[charKey] or defaultProfile or charKey
+		profileKey = sv.profileKeys[charKey] or defaultProfile or charKey
 
 		-- save the selected profile for later
-		tNewDB.profileKeys[charKey] = profileKey
+		sv.profileKeys[charKey] = profileKey
 	else
 		-- Use the profile of the parents DB
 		profileKey = parent.keys.profile or defaultProfile or charKey
 
 		-- clear the profileKeys in the DB, namespaces don't need to store them
-		tNewDB.profileKeys = nil
+		sv.profileKeys = nil
 	end
 
 	-- This table contains keys that enable the dynamic creation
@@ -326,7 +325,7 @@ local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
 	if not rawget(db, "callbacks") then
 		-- try to load CallbackHandler-1.0 if it loaded after our library
 		if not CallbackHandler then
-			local APkg = Apollo.GetPackage("Gemini:CallbackHandler-1.0", true)
+			local APkg = Apollo.GetPackage("Gemini:CallbackHandler-1.0")
 			CallbackHandler = APkg and APkg.tPackage or nil
 		end
 		db.callbacks = CallbackHandler and CallbackHandler:New(db) or CallbackDummy
@@ -346,12 +345,20 @@ local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
 	end
 
 	-- Set some properties in the database object
-	db.profiles = tNewDB.profiles
+	db.profiles = sv.profiles
 	db.keys = keyTbl
-	db.sv = tNewDB
-	--db.tNewDB_name = name
+	db.sv = sv
 	db.defaults = defaults
+	db.defaultProfile = defaultProfile
 	db.parent = parent
+
+	return db
+end
+
+local function createdb(oAddon, defaults, defaultProfile)
+	local tNewDB = {}
+
+	local db = initdb(tNewDB, default, defaultProfile)
 
 	-- store the DB in the registry
 	GeminiDB.db_registry[oAddon] = db
@@ -359,16 +366,7 @@ local function initdb(oAddon, defaults, defaultProfile, olddb, parent)
 	return db
 end
 
--- strip all defaults from the database
--- and cleans up empty sections
-local function OnSave(self, eLevel)
-	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
-		return nil
-	end
-
-	local db = GeminiDB.db_registry[self]
-	if not db then return nil end
-
+local function shutdowndb(db)
 	db.callbacks:Fire("OnDatabaseShutdown", db)
 	db:RegisterDefaults(nil)
 
@@ -390,8 +388,28 @@ local function OnSave(self, eLevel)
 			end
 		end
 	end
+end
+
+-- strip all defaults from the database
+-- and cleans up empty sections
+local function OnSave(self, eLevel)
+	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
+		return nil
+	end
+
+	local db = GeminiDB.db_registry[self]
+	if not db then return nil end
+
+	shutdowndb(db)
+
+	if db.children then
+		for namespace, namespaceDB in pairs(db.children) do
+			shutdowndb(namespaceDB)
+		end
+	end
+
 	-- Return the data to save out
-	return sv
+	return rawget(db, "sv")
 end
 
 local function OnRestore(self, eLevel, tSavedData)
@@ -405,6 +423,17 @@ local function OnRestore(self, eLevel, tSavedData)
 	end
 
 	copyTable(tSavedData, db.sv)
+
+	local sv = rawget(db, "sv")
+	-- Try to get the profile selected from the char db
+	local profileKey = sv.profileKeys[charKey] or db.defaultProfile or charKey
+	-- save the selected profile for later
+	sv.profileKeys[charKey] = profileKey
+
+	-- Set profile to the correct profile
+	local keyTbl = rawget(db, "keys")
+	keyTbl.profile = profileKey
+
 	db.callbacks:Fire("OnDatabaseStartup", db)
 end
 
@@ -744,7 +773,7 @@ function GeminiDB:New(oAddon, defaults, defaultProfile)
 	oAddon.OnSave = OnSave
 	oAddon.OnRestore = OnRestore
 
-	return initdb(oAddon, defaults, defaultProfile)
+	return createdb(oAddon, defaults, defaultProfile)
 end
 
 Apollo.RegisterPackage(GeminiDB, MAJOR, MINOR, {})
