@@ -402,12 +402,14 @@ local function OnSave(self, eLevel)
 
 	shutdowndb(db)
 
-	for namespace, namespaceDB in pairs(db.children) do
-		shutdowndb(namespaceDB)
+	if db.children then
+		for namespace, namespaceDB in pairs(db.children) do
+			shutdowndb(namespaceDB)
+		end
 	end
 
 	-- Return the data to save out
-	return sv
+	return rawget(db, "sv")
 end
 
 local function OnRestore(self, eLevel, tSavedData)
