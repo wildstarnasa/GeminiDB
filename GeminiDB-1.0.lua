@@ -32,7 +32,7 @@
 -- end
 -- @class file
 -- @name GeminiDB-1.0.lua
-local MAJOR, MINOR = "Gemini:DB-1.0", 3
+local MAJOR, MINOR = "Gemini:DB-1.0", 4
 local APkg = Apollo.GetPackage(MAJOR)
 if APkg and (APkg.nVersion or 0) >= MINOR then
 	return -- no upgrade is needed
@@ -223,6 +223,13 @@ local dbmt = {
 			local keys = rawget(t, "keys")
 			local key = keys[section]
 			if key then
+				if type(key) == "function" then
+					if not keys[section](keys) then
+						error("Attempt to access character-specific field " .. section .. " before character loaded.")
+					end
+					-- the key has changed so we need to obtain it again.
+					key = keys[section]	
+				end
 				local defaultTbl = rawget(t, "defaults")
 				local defaults = defaultTbl and defaultTbl[section]
 
@@ -274,6 +281,19 @@ local realmKey = GameLib.GetRealmName()
 local charKey = GameLib.GetAccountRealmCharacter().strCharacter .. " - " .. realmKey
 local localeKey = GetLocale():lower()
 
+local function populateKeys(self)
+	local uPlayer = GameLib.GetPlayerUnit()
+	if not uPlayer then
+		-- No changes
+		return false
+	end
+	self["class"] = "Class - " .. uPlayer:GetClassId()
+	self["race"] = "Race - " .. uPlayer:GetRaceId()
+
+	-- Changes made
+	return true
+end
+
 -- Actual database initialization function
 local function initdb(sv, defaults, defaultProfile, olddb, parent)
 	-- Generate the database keys for each section
@@ -309,6 +329,8 @@ local function initdb(sv, defaults, defaultProfile, olddb, parent)
 		["locale"] = localeKey,
 		["global"] = true,
 		["profiles"] = true,
+		["class"] = populateKeys,
+		["race"] = populateKeys,
 	}
 
 	validateDefaults(defaults, keyTbl, 1)
@@ -358,7 +380,7 @@ end
 local function createdb(oAddon, defaults, defaultProfile)
 	local tNewDB = {}
 
-	local db = initdb(tNewDB, default, defaultProfile)
+	local db = initdb(tNewDB, defaults, defaultProfile)
 
 	-- store the DB in the registry
 	GeminiDB.db_registry[oAddon] = db
@@ -445,7 +467,7 @@ local function OnRestore(self, eLevel, tSavedData)
 
 			-- Set profile to the correct profile
 			local keyTbl = rawget(namespaceDB, "keys")
-			keyTbl.profile = profileKey			
+			keyTbl.profile = profileKey
 		end
 	end
 
