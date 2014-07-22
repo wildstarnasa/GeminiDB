@@ -32,7 +32,7 @@
 -- end
 -- @class file
 -- @name GeminiDB-1.0.lua
-local MAJOR, MINOR = "Gemini:DB-1.0", 4
+local MAJOR, MINOR = "Gemini:DB-1.0", 5
 local APkg = Apollo.GetPackage(MAJOR)
 if APkg and (APkg.nVersion or 0) >= MINOR then
 	return -- no upgrade is needed
@@ -43,7 +43,11 @@ local GeminiDB = APkg and APkg.tPackage or {}
 local type, pairs, next, error, tinsert, tremove = type, pairs, next, error, table.insert, table.remove
 local setmetatable, getmetatable, rawset, rawget = setmetatable, getmetatable, rawset, rawget
 
+-- Wildstar APIs
+local Apollo, GameLib = Apollo, GameLib
+
 -- Global vars/functions that we don't upvalue since they might get hooked, or upgraded
+--GLOBALS:
 
 local CallbackHandler, AddonLog
 local CallbackDummy = { Fire = function() end }
@@ -364,6 +368,7 @@ local function initdb(sv, defaults, defaultProfile, olddb, parent)
 		-- hack this one in
 		db.RegisterDefaults = DBObjectLib.RegisterDefaults
 		db.ResetProfile = DBObjectLib.ResetProfile
+		db.ResetSection = DBObjectLib.ResetSection
 	end
 
 	-- Set some properties in the database object
@@ -689,6 +694,42 @@ function DBObjectLib:ResetProfile(noChildren, noCallbacks)
 	-- Callback: OnProfileReset, database
 	if not noCallbacks then
 		self.callbacks:Fire("OnProfileReset", self)
+	end
+end
+
+--- Resets the current profile to the default values (if specified).
+-- @param name The name of the database section to reset
+-- @param noChildren if set to true, the reset will not be populated to the child namespaces of this DB object
+-- @param noCallbacks if set to true, won't fire the On Type Reset callback
+function DBObjectLib:ResetSection(name, noChildren, noCallbacks)
+	if not name then
+		error(("Usage: GeminiDBObject:ResetSection(name, noChildren, noCallbacks): 'name' - string required."))
+	end
+	local keyTbl = rawget(self, "keys")
+	if not keyTbl[name] or name == "profiles" then
+		error(("Usage: GeminiDBObject:ResetSection(name, noChildren, noCallbacks): '%s' is not a valid section."):format(type))
+	end
+	local section = self[name]
+
+	for k,v in pairs(section) do
+		section[k] = nil
+	end
+
+	local defaults = self.defaults and self.defaults[name]
+	if defaults then
+		copyDefaults(section, defaults)
+	end
+
+	-- populate to child namespaces
+	if self.children and not noChildren then
+		for _, db in pairs(self.children) do
+			DBObjectLib.ResetSection(db, name, nil, noCallbacks)
+		end
+	end
+
+	-- Callback: OnSectionReset, database, sectionName
+	if not noCallbacks then
+		self.callbacks:Fire("OnSectionReset", self, name)
 	end
 end
 
